@@ -1,58 +1,67 @@
-import express from "express";
-import fetch from "node-fetch"; // Node 18+ me built-in fetch bhi chal sakta hai
-import cors from "cors";
+// server.js
+const express = require("express");
+const fetch = require("node-fetch"); // Node 18+ me built-in fetch hai
+const cors = require("cors");
 
 const app = express();
 app.use(cors());
 
-const IPHUB_API_KEY = "MzA3NDk6bnBvTFJxZ0FUQlRmME5DZXF1T0RLc2E5YXdWWk9QV1A="; // Yahan apni IPHub key lagao
+// ⚡ Replace with your actual IPHub API key
+const IPHUB_API_KEY = "MzA3NDk6bnBvTFJxZ0FUQlRmME5DZXF1T0RLc2E5YXdWWk9QV1A=";
 
 app.get("/dc", async (req, res) => {
   try {
+    // Client IP detection
     const clientIp =
       req.headers["x-forwarded-for"] ||
+      req.headers["cf-connecting-ip"] ||
       req.connection.remoteAddress ||
       "unknown";
 
-    // IPHub API call
-    const response = await fetch(`https://v2.api.iphub.info/ip/${clientIp}`, {
-      headers: {
-        "X-Key": IPHUB_API_KEY
+    // Call IPHub API
+    const iphubResponse = await fetch(
+      `https://v2.api.iphub.info/ip/${clientIp}`,
+      {
+        headers: { "X-Key": IPHUB_API_KEY },
       }
-    });
+    );
 
-    const data = await response.json();
+    const iphubData = await iphubResponse.json();
 
-    // data.block: 0 = Residential, 1 = Non-Residential (VPN/Proxy), 2 = Data Center
-    const isPakistan = data.countryCode === "PK";
-    const showPage = !isPakistan; // Pakistan users -> normal page, others -> special page
+    const isPakistan = iphubData.countryCode === "PK";
+    const isVPN = iphubData.block === 1 || iphubData.block === 2; // 1=VPN, 2=Proxy
 
-    res.json({
+    // 🔥 Business Logic
+    // Pakistan → normal page
+    // Non-Pakistan → special page
+    const showPage = !isPakistan;
+
+    const responseData = {
       clientIp: clientIp,
       [clientIp]: {
-        isocode: data.countryCode || "UNKNOWN",
-        country_name: data.country || "Unknown",
-        proxy: data.block === 1 || data.block === 2
+        isocode: iphubData.countryCode || "UNKNOWN",
+        country_name: iphubData.countryName || "Unknown",
+        proxy: isVPN,
       },
       showPage: showPage,
-      country: data.countryCode || "UNKNOWN",
-      vpn: data.block === 1 || data.block === 2,
+      country: iphubData.countryCode || "UNKNOWN",
+      vpn: isVPN,
       message: showPage
         ? "Special page for non-Pakistan"
         : "Normal page for Pakistan",
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error("Error:", error);
+      timestamp: new Date().toISOString(),
+    };
+
+    res.json(responseData);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({
       error: "Server error",
       showPage: false,
-      message: "Defaulting to normal page due to error"
+      message: "Defaulting to normal page",
     });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
