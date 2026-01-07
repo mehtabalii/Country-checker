@@ -1,32 +1,24 @@
 const express = require("express");
 const cors = require("cors");
-const fetch = require("node-fetch");
 
 const app = express();
 app.use(cors());
 
-const IPDATA_API_KEY = "d383fa127e8095876a4be47e1b4117bcf65ba49a6a0f777861879ed9"; // 👈 Yahan apni key dal do
+// Dynamic import for node-fetch v3
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+const IPDATA_API_KEY = "d383fa127e8095876a4be47e1b4117bcf65ba49a6a0f777861879ed9";
 
 app.get("/dc", async (req, res) => {
   try {
     const clientIp = req.headers["x-forwarded-for"] || req.ip || "unknown";
 
-    // IPData API call
     const response = await fetch(`https://api.ipdata.co/${clientIp}?api-key=${IPDATA_API_KEY}`);
     const data = await response.json();
 
-    // Country code
     const countryCode = data.country_code || "UNKNOWN";
-
-    // VPN/Proxy detection
     const vpnDetected = data.threat?.is_proxy || false;
-
-    // Logic
     const isPakistan = countryCode === "PK";
-
-    // Show page logic
-    // Pakistan → normal page
-    // Non-Pakistan + VPN → special page
     const showPage = !isPakistan && !vpnDetected ? true : false;
 
     res.json({
