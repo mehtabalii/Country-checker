@@ -1,46 +1,54 @@
-const express = require("express");
-const cors = require("cors");
+import express from "express";
+import fetch from "node-fetch"; // Node 18+ me built-in fetch bhi chal sakta hai
+import cors from "cors";
 
 const app = express();
 app.use(cors());
 
-// Dynamic import for node-fetch v3
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
-const IPDATA_API_KEY = "d383fa127e8095876a4be47e1b4117bcf65ba49a6a0f777861879ed9";
+const IPHUB_API_KEY = "MzA3NDk6bnBvTFJxZ0FUQlRmME5DZXF1T0RLc2E5YXdWWk9QV1A="; // Yahan apni IPHub key lagao
 
 app.get("/dc", async (req, res) => {
   try {
-    const clientIp = req.headers["x-forwarded-for"] || req.ip || "unknown";
+    const clientIp =
+      req.headers["x-forwarded-for"] ||
+      req.connection.remoteAddress ||
+      "unknown";
 
-    const response = await fetch(`https://api.ipdata.co/${clientIp}?api-key=${IPDATA_API_KEY}`);
+    // IPHub API call
+    const response = await fetch(`https://v2.api.iphub.info/ip/${clientIp}`, {
+      headers: {
+        "X-Key": IPHUB_API_KEY
+      }
+    });
+
     const data = await response.json();
 
-    const countryCode = data.country_code || "UNKNOWN";
-    const vpnDetected = data.threat?.is_proxy || false;
-    const isPakistan = countryCode === "PK";
-    const showPage = !isPakistan && !vpnDetected ? true : false;
+    // data.block: 0 = Residential, 1 = Non-Residential (VPN/Proxy), 2 = Data Center
+    const isPakistan = data.countryCode === "PK";
+    const showPage = !isPakistan; // Pakistan users -> normal page, others -> special page
 
     res.json({
-      clientIp,
+      clientIp: clientIp,
       [clientIp]: {
-        isocode: countryCode,
-        country_name: data.country_name || "Other",
-        proxy: vpnDetected
+        isocode: data.countryCode || "UNKNOWN",
+        country_name: data.country || "Unknown",
+        proxy: data.block === 1 || data.block === 2
       },
-      showPage,
-      country: countryCode,
-      vpn: vpnDetected,
-      message: isPakistan
-        ? "Normal page for Pakistan user"
-        : vpnDetected
-        ? "VPN detected: normal page"
-        : "Special page for non-Pakistan",
+      showPage: showPage,
+      country: data.countryCode || "UNKNOWN",
+      vpn: data.block === 1 || data.block === 2,
+      message: showPage
+        ? "Special page for non-Pakistan"
+        : "Normal page for Pakistan",
       timestamp: new Date().toISOString()
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error", showPage: false });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({
+      error: "Server error",
+      showPage: false,
+      message: "Defaulting to normal page due to error"
+    });
   }
 });
 
