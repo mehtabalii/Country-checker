@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 
@@ -26,7 +27,11 @@ app.get("/dc", async (req, res) => {
     const isPakistan = iphubData.countryCode === "PK";
     const isVPN = iphubData.block === 1 || iphubData.block === 2;
 
-    const showPage = !isPakistan;
+    // ✅ Business Logic
+    // Pakistan → normal page
+    // Non-Pakistan VPN → normal page
+    // Non-Pakistan without VPN → special page
+    const showPage = !isPakistan && !isVPN;
 
     res.json({
       clientIp: clientIp,
@@ -39,8 +44,8 @@ app.get("/dc", async (req, res) => {
       country: iphubData.countryCode || "UNKNOWN",
       vpn: isVPN,
       message: showPage
-        ? "Special page for non-Pakistan"
-        : "Normal page for Pakistan",
+        ? "Special page for non-Pakistan without VPN"
+        : "Normal page",
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
