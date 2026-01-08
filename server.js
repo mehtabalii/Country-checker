@@ -1,4 +1,4 @@
-// server.js - IMPROVED VPN DETECTION
+// server.js - ADVANCED PAKISTAN USER DETECTION
 const express = require('express');
 const cors = require('cors');
 const app = express();
@@ -8,135 +8,297 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Pakistan IP ranges
-const PAKISTAN_IPS = [
-    '39.34.', '39.35.', '39.36.', '39.37.', '39.38.', '39.39.', '39.40.', '39.41.', '39.42.', '39.43.',
-    '39.44.', '39.45.', '39.46.', '39.47.', '39.48.', '39.49.', '39.50.', '39.51.', '39.52.', '39.53.',
-    '39.54.', '39.55.', '39.56.', '39.57.', '39.58.', '39.59.', '39.60.', '39.61.', '39.62.', '39.63.',
-    
-    '101.50.', '101.51.', '101.52.', '101.53.', '101.54.', '101.55.', '101.56.', '101.57.', '101.58.',
-    '101.59.', '101.60.', '101.61.', '101.62.', '101.63.', '101.64.', '101.65.', '101.66.', '101.67.',
-    '101.68.', '101.69.', '101.70.', '101.71.', '101.72.', '101.73.', '101.74.', '101.75.', '101.76.',
-    '101.77.', '101.78.', '101.79.', '101.80.', '101.81.', '101.82.', '101.83.', '101.84.', '101.85.',
-    '101.86.', '101.87.', '101.88.', '101.89.', '101.90.', '101.91.', '101.92.', '101.93.', '101.94.',
-    '101.95.', '101.96.', '101.97.', '101.98.', '101.99.', '101.100.', '101.101.', '101.102.', '101.103.',
-    
-    '110.36.', '110.37.', '110.38.', '110.39.', '110.40.', '110.41.', '110.42.', '110.43.',
-    '110.44.', '110.45.', '110.46.', '110.47.', '110.48.', '110.49.', '110.50.', '110.51.',
-    '110.52.', '110.53.', '110.54.', '110.55.', '110.56.', '110.57.', '110.58.', '110.59.',
-    
-    '111.68.', '111.69.', '111.70.', '111.71.', '111.72.', '111.73.', '111.74.', '111.75.',
-    '111.76.', '111.77.', '111.78.', '111.79.', '111.80.', '111.81.', '111.82.', '111.83.',
-    
-    '113.203.', '113.204.', '113.205.', '113.206.', '113.207.', '113.208.', '113.209.',
-    
-    '115.186.', '115.187.', '115.188.', '115.189.', '115.190.', '115.191.', '115.192.',
-    
-    '116.0.', '116.1.', '116.2.', '116.3.', '116.4.', '116.5.', '116.6.', '116.7.',
-    '116.8.', '116.9.', '116.10.', '116.11.', '116.12.', '116.13.', '116.14.', '116.15.',
-    
-    '117.102.', '117.103.', '117.104.', '117.105.', '117.106.', '117.107.', '117.108.',
-    '117.109.', '117.110.', '117.111.', '117.112.', '117.113.', '117.114.', '117.115.',
-    
-    '119.152.', '119.153.', '119.154.', '119.155.', '119.156.', '119.157.', '119.158.',
-    '119.159.', '119.160.', '119.161.', '119.162.', '119.163.', '119.164.', '119.165.',
-    
-    '182.176.', '182.177.', '182.178.', '182.179.', '182.180.', '182.181.', '182.182.',
-    '182.183.', '182.184.', '182.185.', '182.186.', '182.187.', '182.188.', '182.189.',
-    
-    '202.141.', '202.142.', '202.143.', '202.144.', '202.145.', '202.146.', '202.147.',
-    '202.148.', '202.149.', '202.150.', '202.151.', '202.152.', '202.153.', '202.154.',
-    
-    '203.81.', '203.82.', '203.83.', '203.84.', '203.99.', '203.100.', '203.101.',
-    '203.102.', '203.103.', '203.104.', '203.105.', '203.106.', '203.107.', '203.108.',
-    
-    '210.1.', '210.2.', '210.3.', '210.4.', '210.5.', '210.6.', '210.7.', '210.8.',
-    '210.9.', '210.10.', '210.11.', '210.12.', '210.13.', '210.14.', '210.15.'
-];
+// In-memory storage for user sessions
+const userSessions = new Map();
+const suspiciousIPs = new Map();
 
-// VPN IP ranges - Your VPN IP added
-const VPN_IPS = [
-    '104.200.', '104.201.', '104.202.', '104.203.', '104.204.', '104.205.', '104.206.', '104.207.',
-    '104.208.', '104.209.', '104.210.', '104.211.', '104.212.', '104.213.', '104.214.', '104.215.',
+// Advanced Pakistan detection function
+function detectPakistanUser(req, clientIP) {
+    const headers = req.headers;
+    const userAgent = headers['user-agent'] || '';
     
-    '185.159.', '185.160.', '185.161.', '185.162.', '185.163.', '185.164.', '185.165.',
-    '185.166.', '185.167.', '185.168.', '185.169.', '185.170.', '185.171.', '185.172.',
+    // 1. IP Check (Basic)
+    const pakistanIPs = [
+        '39.34.', '39.35.', '39.36.', '39.37.', '39.38.', '39.39.', 
+        '101.50.', '101.51.', '101.52.', '101.53.', '101.54.',
+        '110.36.', '110.37.', '110.38.', '110.39.', '110.40.',
+        '111.68.', '111.69.', '111.70.', '111.71.', '111.72.',
+        '113.203.', '113.204.', '113.205.', '113.206.', '113.207.',
+        '115.186.', '115.187.', '115.188.', '115.189.', '115.190.',
+        '116.0.', '116.1.', '116.2.', '116.3.', '116.4.', '116.5.',
+        '117.102.', '117.103.', '117.104.', '117.105.', '117.106.',
+        '119.152.', '119.153.', '119.154.', '119.155.', '119.156.',
+        '182.176.', '182.177.', '182.178.', '182.179.', '182.180.',
+        '202.141.', '202.142.', '202.143.', '202.144.', '202.145.',
+        '203.81.', '203.82.', '203.83.', '203.84.', '203.99.',
+        '210.1.', '210.2.', '210.3.', '210.4.', '210.5.'
+    ];
     
-    '45.134.', '45.135.', '45.136.', '45.137.', '45.138.', '45.139.', '45.140.', '45.141.',
+    let isPakIP = false;
+    for (const range of pakistanIPs) {
+        if (clientIP.startsWith(range)) {
+            isPakIP = true;
+            break;
+        }
+    }
     
-    '91.200.', '91.201.', '91.202.', '91.203.', '91.204.', '91.205.', '91.206.', '91.207.',
+    // 2. User-Agent Analysis
+    const isPakUserAgent = analyzeUserAgent(userAgent);
     
-    '103.146.', '103.147.', '103.148.', '103.149.', '103.150.', '103.151.', '103.152.',
+    // 3. Language Detection
+    const acceptLanguage = headers['accept-language'] || '';
+    const isPakLanguage = detectPakistaniLanguage(acceptLanguage);
     
-    '5.188.', '5.189.', '5.190.', '5.191.', '5.192.', '5.193.', '5.194.', '5.195.',
+    // 4. Timezone Detection (from headers if available)
+    const timezoneOffset = headers['timezone-offset'] || '';
+    const isPakTimezone = detectPakistaniTimezone(timezoneOffset);
     
-    // ✅ Aapke VPN ke IP ko add karein
-    '207.244.', '207.245.', '207.246.', '207.247.', '207.248.', '207.249.', '207.250.', '207.251.',
+    // 5. Behavioral Analysis (if previous session exists)
+    const sessionId = headers['session-id'] || clientIP;
+    const userBehavior = analyzeUserBehavior(sessionId, req);
     
-    // Common VPN services
-    '104.139.', '104.140.', '104.141.', '104.142.', '104.143.', '104.144.', '104.145.',
-    '104.146.', '104.147.', '104.148.', '104.149.', '104.150.', '104.151.', '104.152.',
+    // 6. VPN/Proxy Detection (advanced)
+    const isVPN = detectAdvancedVPN(headers, clientIP);
     
-    '185.93.', '185.94.', '185.95.', '185.96.', '185.97.', '185.98.', '185.99.',
-    '185.100.', '185.101.', '185.102.', '185.103.', '185.104.', '185.105.', '185.106.',
+    // 7. Device Fingerprinting (simplified)
+    const deviceFingerprint = createDeviceFingerprint(req);
+    const isPakDevice = checkPakistaniDevicePatterns(deviceFingerprint);
     
-    '45.87.', '45.88.', '45.89.', '45.90.', '45.91.', '45.92.', '45.93.', '45.94.',
-    '45.95.', '45.96.', '45.97.', '45.98.', '45.99.', '45.100.', '45.101.', '45.102.',
+    // Weighted scoring system
+    let pakScore = 0;
+    const maxScore = 10;
     
-    '104.128.', '104.129.', '104.130.', '104.131.', '104.132.', '104.133.', '104.134.',
-    '104.135.', '104.136.', '104.137.', '104.138.'
-];
+    if (isPakIP) pakScore += 3;           // IP match
+    if (isPakUserAgent) pakScore += 2;    // User-agent patterns
+    if (isPakLanguage) pakScore += 2;     // Language preferences
+    if (isPakTimezone) pakScore += 1;     // Timezone
+    if (isPakDevice) pakScore += 1;       // Device patterns
+    if (!isVPN) pakScore += 1;           // Not using VPN
+    
+    // Adjust score based on behavior
+    pakScore += userBehavior.score;
+    
+    console.log('🧠 Advanced Detection Results:', {
+        ip: clientIP,
+        isPakIP,
+        isPakUserAgent,
+        isPakLanguage,
+        isPakTimezone,
+        isVPN,
+        isPakDevice,
+        userBehavior: userBehavior.score,
+        totalScore: pakScore,
+        threshold: 5
+    });
+    
+    // Decision: Score 5+ means likely Pakistan user
+    return pakScore >= 5;
+}
 
-// Check if IP is from Pakistan
-function isPakistanIP(ip) {
-    if (!ip) return false;
-    ip = ip.trim();
+// Helper functions
+function analyzeUserAgent(userAgent) {
+    // Check for Pakistani mobile devices, browsers, etc.
+    const pakPatterns = [
+        /PK-/i,                    // Pakistan locale
+        /ur_PK/i,                  // Urdu Pakistan
+        /Android.*PK/i,            // Android Pakistan
+        /iPhone.*PK/i,             // iPhone Pakistan
+        /JazzWing/i,               // Pakistani ISP devices
+        /Telenor/i,                // Telenor Pakistan
+        /Zong/i,                   // Zong Pakistan
+        /Ufone/i,                  // Ufone Pakistan
+        /Mobilink/i,               // Mobilink Pakistan
+        /Warid/i,                  // Warid Pakistan
+    ];
     
-    for (const pakIP of PAKISTAN_IPS) {
-        if (ip.startsWith(pakIP)) {
+    for (const pattern of pakPatterns) {
+        if (pattern.test(userAgent)) {
             return true;
         }
     }
+    
+    // Check for common Pakistani browsers
+    const lowerUA = userAgent.toLowerCase();
+    if (lowerUA.includes('pk') || lowerUA.includes('pakistan')) {
+        return true;
+    }
+    
     return false;
 }
 
-// Check if IP is VPN (improved)
-function isVPN(ip) {
-    if (!ip) return false;
-    ip = ip.trim();
+function detectPakistaniLanguage(acceptLanguage) {
+    // Pakistani languages: ur (Urdu), ps (Pashto), sd (Sindhi), etc.
+    const pakLanguages = ['ur', 'ps', 'sd', 'pa', 'bal', 'brh'];
     
-    // Common VPN patterns check
-    const vpnPatterns = [
-        /^104\.2\d{2}\./,  // 104.200-104.299
-        /^185\.1\d{2}\./,  // 185.100-185.199
-        /^45\.1\d{2}\./,   // 45.100-45.199
-        /^91\.2\d{2}\./,   // 91.200-91.299
-        /^103\.1\d{2}\./,  // 103.100-103.199
-        /^5\.18[8-9]\./,   // 5.188-5.199
-        /^207\.244\./,     // Your VPN
-        /^207\.245\./,
-        /^207\.246\./,
-        /^207\.247\./,
-        /^207\.248\./,
-        /^207\.249\./,
-        /^207\.250\./,
-        /^207\.251\./,
-        /^185\.9[0-9]\./,  // 185.90-185.99
-        /^45\.8[7-9]\./,   // 45.87-45.99
-        /^104\.139\./,
-        /^104\.14[0-9]\./, // 104.140-104.149
-        /^104\.15[0-9]\./  // 104.150-104.159
-    ];
-    
-    for (const pattern of vpnPatterns) {
-        if (pattern.test(ip)) {
+    for (const lang of pakLanguages) {
+        if (acceptLanguage.toLowerCase().includes(lang)) {
             return true;
         }
     }
     
-    // Also check exact VPN list
-    for (const vpnIP of VPN_IPS) {
-        if (ip.startsWith(vpnIP)) {
+    // Check for Pakistan locale
+    if (acceptLanguage.toLowerCase().includes('pk') || 
+        acceptLanguage.toLowerCase().includes('pak')) {
+        return true;
+    }
+    
+    return false;
+}
+
+function detectPakistaniTimezone(timezoneOffset) {
+    // Pakistan Standard Time: UTC+5
+    const pstOffsets = ['+05:00', '+0500', '5'];
+    
+    for (const offset of pstOffsets) {
+        if (timezoneOffset.includes(offset)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function analyzeUserBehavior(sessionId, req) {
+    const now = Date.now();
+    const session = userSessions.get(sessionId) || {
+        firstSeen: now,
+        lastSeen: now,
+        requestCount: 0,
+        isPakistani: false,
+        confidence: 0
+    };
+    
+    // Update session
+    session.requestCount++;
+    session.lastSeen = now;
+    
+    // Check request patterns
+    const headers = req.headers;
+    
+    // Pakistani users often have specific headers
+    let behaviorScore = 0;
+    
+    // Check for Pakistani referrers
+    const referer = headers['referer'] || '';
+    if (referer.includes('.pk') || referer.includes('pakistan')) {
+        behaviorScore += 2;
+    }
+    
+    // Check for Pakistani domains in origin
+    const origin = headers['origin'] || '';
+    if (origin.includes('.pk')) {
+        behaviorScore += 3;
+    }
+    
+    // Check connection speed (Pakistani users often have slower connections)
+    const connection = headers['connection'] || '';
+    const saveData = headers['save-data'] || '';
+    
+    if (saveData === 'on') {
+        behaviorScore += 1; // Data saving mode common in Pakistan
+    }
+    
+    // Store updated session
+    session.confidence = Math.min(behaviorScore, 5);
+    userSessions.set(sessionId, session);
+    
+    return {
+        score: behaviorScore,
+        isReturning: session.requestCount > 1,
+        confidence: session.confidence
+    };
+}
+
+function detectAdvancedVPN(headers, clientIP) {
+    // Advanced VPN detection
+    const vpnIndicators = [];
+    
+    // 1. Check for VPN/proxy headers
+    const proxyHeaders = [
+        'via', 'x-forwarded-for', 'x-proxy-id', 'x-real-ip',
+        'cf-connecting-ip', 'cf-ipcountry', 'x-client-ip'
+    ];
+    
+    for (const header of proxyHeaders) {
+        if (headers[header] && headers[header] !== clientIP) {
+            vpnIndicators.push(`header:${header}`);
+        }
+    }
+    
+    // 2. Check for cloud hosting IPs
+    const cloudRanges = [
+        '104.200.', '185.159.', '45.134.', '91.200.', '103.146.',
+        '5.188.', '207.244.', '104.128.', '185.93.', '45.87.',
+        '104.139.', '104.140.', '104.141.', '104.142.'
+    ];
+    
+    for (const range of cloudRanges) {
+        if (clientIP.startsWith(range)) {
+            vpnIndicators.push(`cloud:${range}`);
+            break;
+        }
+    }
+    
+    // 3. Check IP reputation (simulated)
+    const suspiciousCount = suspiciousIPs.get(clientIP) || 0;
+    if (suspiciousCount > 2) {
+        vpnIndicators.push('suspicious');
+    }
+    
+    // 4. Check for anonymous proxies
+    const anonymousHeaders = ['proxy-connection', 'x-anonymous-id'];
+    for (const header of anonymousHeaders) {
+        if (headers[header]) {
+            vpnIndicators.push(`anonymous:${header}`);
+        }
+    }
+    
+    // Mark IP as suspicious if multiple indicators
+    if (vpnIndicators.length > 0) {
+        suspiciousIPs.set(clientIP, (suspiciousCount || 0) + 1);
+        return true;
+    }
+    
+    return false;
+}
+
+function createDeviceFingerprint(req) {
+    const headers = req.headers;
+    
+    // Create a simple fingerprint from available data
+    const fingerprint = {
+        userAgent: headers['user-agent'] || '',
+        accept: headers['accept'] || '',
+        acceptLanguage: headers['accept-language'] || '',
+        acceptEncoding: headers['accept-encoding'] || '',
+        connection: headers['connection'] || '',
+        platform: headers['sec-ch-ua-platform'] || '',
+        mobile: headers['sec-ch-ua-mobile'] || ''
+    };
+    
+    return JSON.stringify(fingerprint);
+}
+
+function checkPakistaniDevicePatterns(fingerprint) {
+    const fp = JSON.parse(fingerprint);
+    const ua = fp.userAgent.toLowerCase();
+    
+    // Pakistani mobile operators
+    const pakMobileOperators = [
+        'jazz', 'telenor', 'zong', 'ufone', 'mobilink', 'warid',
+        'jazzcash', 'easypaisa', 'upaisa'
+    ];
+    
+    for (const operator of pakMobileOperators) {
+        if (ua.includes(operator)) {
+            return true;
+        }
+    }
+    
+    // Check for Pakistani apps
+    const pakApps = ['daraz', 'foodpanda', 'bykea', 'careem', 'pakistan'];
+    for (const app of pakApps) {
+        if (ua.includes(app)) {
             return true;
         }
     }
@@ -154,8 +316,6 @@ app.get('/dc', (req, res) => {
                       req.socket.remoteAddress || 
                       req.ip;
         
-        console.log('🔍 Original IP:', clientIP);
-        
         // Clean IP address
         if (clientIP.includes(',')) {
             clientIP = clientIP.split(',')[0].trim();
@@ -164,35 +324,26 @@ app.get('/dc', (req, res) => {
             clientIP = clientIP.replace('::ffff:', '');
         }
         
-        // Remove port if present
-        if (clientIP.includes(':')) {
-            const parts = clientIP.split(':');
-            if (parts.length > 1) {
-                clientIP = parts[0]; // Take first part only
-            }
-        }
+        console.log('🔍 Advanced Detection for IP:', clientIP);
         
-        console.log('📡 Cleaned IP:', clientIP);
+        // Advanced Pakistan user detection
+        const isPakistanUser = detectPakistanUser(req, clientIP);
         
-        // Check if IP is from Pakistan
-        const isPak = isPakistanIP(clientIP);
-        const isVPNIP = isVPN(clientIP);
+        // Advanced VPN detection
+        const isVPN = detectAdvancedVPN(req.headers, clientIP);
         
-        console.log('🏳️ Is Pakistan IP:', isPak);
-        console.log('🔒 Is VPN:', isVPNIP);
+        // 🔥 FINAL DECISION LOGIC:
+        // showPage: false = Normal Page (NO Recovery) → Pakistan user OR VPN user
+        // showPage: true = Special Page (WITH Recovery) → Non-Pakistan, non-VPN user
         
-        // 🔥 DECISION LOGIC:
-        // showPage: true = Special Page (WITH Recovery section) → NON-PAKISTAN
-        // showPage: false = Normal Page (NO Recovery section) → PAKISTAN
-        
-        let showPage = true; // Default: Special Page (NON-PAKISTAN)
+        let showPage = true; // Default: Special Page
         let message = '';
         
-        if (isPak || isVPNIP) {
+        if (isPakistanUser || isVPN) {
             // ✅ Pakistan user OR VPN user = Normal Page
             showPage = false; // Normal Page (NO Recovery)
-            message = isPak ? 
-                (isVPNIP ? "Pakistan user with VPN → Normal Page" : "Pakistan user → Normal Page") :
+            message = isPakistanUser ? 
+                (isVPN ? "Pakistan user with VPN → Normal Page" : "Pakistan user → Normal Page") :
                 "VPN user → Normal Page";
         } else {
             // ❌ Non-Pakistan, non-VPN = Special Page
@@ -203,17 +354,18 @@ app.get('/dc', (req, res) => {
         const response = {
             showPage: showPage,  // true=Special, false=Normal
             ip: clientIP,
-            isPakistanIP: isPak,
-            isVPN: isVPNIP,
+            isPakistanUser: isPakistanUser,
+            isVPN: isVPN,
+            detectionMethod: isPakistanUser ? "Advanced Multi-factor" : "Basic",
             timestamp: new Date().toISOString(),
             message: message
         };
         
-        console.log('📊 Final Response:', response);
+        console.log('📊 Final Decision:', response);
         res.json(response);
         
     } catch (error) {
-        console.error('❌ Error:', error);
+        console.error('❌ Server Error:', error);
         res.status(500).json({
             showPage: false, // Default to Normal Page on error
             error: 'Server error',
@@ -222,18 +374,35 @@ app.get('/dc', (req, res) => {
     }
 });
 
-// Test endpoint for your VPN IP
-app.get('/test-vpn', (req, res) => {
-    const testIP = '207.244.71.82';
-    const isPak = isPakistanIP(testIP);
-    const isVPNIP = isVPN(testIP);
+// Test endpoint with detailed analysis
+app.get('/analyze', (req, res) => {
+    let clientIP = req.headers['x-forwarded-for'] || req.ip;
     
+    if (clientIP.includes(',')) clientIP = clientIP.split(',')[0].trim();
+    if (clientIP.startsWith('::ffff:')) clientIP = clientIP.replace('::ffff:', '');
+    
+    const analysis = {
+        ip: clientIP,
+        headers: req.headers,
+        userAgent: req.headers['user-agent'],
+        acceptLanguage: req.headers['accept-language'],
+        timezone: req.headers['timezone-offset'],
+        sessionId: req.headers['session-id'] || 'none',
+        isPakistanUser: detectPakistanUser(req, clientIP),
+        isVPN: detectAdvancedVPN(req.headers, clientIP),
+        recommendation: detectPakistanUser(req, clientIP) ? 'Normal Page' : 'Special Page'
+    };
+    
+    res.json(analysis);
+});
+
+// Admin endpoint to see detected patterns
+app.get('/admin/stats', (req, res) => {
     res.json({
-        testIP: testIP,
-        isPakistanIP: isPak,
-        isVPN: isVPNIP,
-        result: isPak || isVPNIP ? 'Normal Page' : 'Special Page',
-        message: isPak ? 'Pakistan IP' : (isVPNIP ? 'VPN IP' : 'Non-Pakistan IP')
+        userSessions: Array.from(userSessions.entries()).slice(0, 10),
+        suspiciousIPs: Array.from(suspiciousIPs.entries()).slice(0, 10),
+        totalSessions: userSessions.size,
+        totalSuspiciousIPs: suspiciousIPs.size
     });
 });
 
@@ -241,16 +410,32 @@ app.get('/test-vpn', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
-        message: 'Backend is running',
+        message: 'Advanced Detection System Running',
+        features: [
+            'IP Analysis',
+            'User-Agent Pattern Recognition',
+            'Language Detection',
+            'Timezone Detection',
+            'Behavioral Analysis',
+            'Advanced VPN Detection',
+            'Device Fingerprinting'
+        ],
         timestamp: new Date().toISOString()
     });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🚀 Advanced Detection Server running on port ${PORT}`);
     console.log(`📌 Main endpoint: http://localhost:${PORT}/dc`);
-    console.log(`📌 Test VPN: http://localhost:${PORT}/test-vpn`);
+    console.log(`📌 Analysis: http://localhost:${PORT}/analyze`);
+    console.log(`📌 Admin stats: http://localhost:${PORT}/admin/stats`);
     console.log(`📌 Health check: http://localhost:${PORT}/health`);
-    console.log(`\n🔍 Aapka VPN IP (207.244.71.82) ab detect ho jayega!`);
+    console.log(`\n🔍 Detection Features:`);
+    console.log(`✅ Multi-factor Pakistan user detection`);
+    console.log(`✅ Behavioral pattern analysis`);
+    console.log(`✅ Advanced VPN/proxy detection`);
+    console.log(`✅ Device fingerprinting`);
+    console.log(`✅ Real-time session tracking`);
+    console.log(`✅ IP reputation system`);
 });
