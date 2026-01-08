@@ -1,23 +1,32 @@
 {
-  "name": "country-checker",
-  "version": "1.0.0",
-  "description": "Pakistan & VPN detection backend - Normal vs Special page logic",
+  "name": "Country -checker",
+  "version": "2.0.0",
+  "description": "Advanced Pakistan detection with VPN-friendly logic - Pakistan users get Normal Page regardless of VPN",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "engines": {
-    "node": ">=18"
+    "dev": "nodemon server.js",
+    "test": "node test-all-scenarios.js",
+    "test-pak-vpn": "curl -H \"User-Agent: Mozilla/5.0 (Android; PK; Jazz VPN)\" -H \"X-Forwarded-For: 185.159.100.100\" \"http://localhost:3000/detect\"",
+    "test-pak-no-vpn": "curl -H \"User-Agent: Mozilla/5.0 (Android; PK; Jazz)\" \"http://localhost:3000/detect\"",
+    "test-india": "curl -H \"User-Agent: Mozilla/5.0 (Android; India; Airtel)\" \"http://localhost:3000/detect\"",
+    "benchmark": "node benchmark-test.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "cors": "^2.8.5",
-    "ua-parser-js": "^1.0.37",
-    "geoip-lite": "^1.4.10"
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+    "nodemon": "^2.0.22"
+  },
+  "keywords": [
+    "pakistan",
+    "vpn-friendly",
+    "geo-detection",
+    "smart-detection",
+    "normal-page",
+    "special-page"
+  ],
+  "author": "Ultimate Detection Team",
+  "license": "MIT"
 }
