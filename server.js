@@ -1,5 +1,6 @@
-// server-pakistan-vpn-normal.js
+// server-ultimate-pakistan-vpn.js
 const express = require('express');
+const crypto = require('crypto');
 const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -7,186 +8,231 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-class PakistanFriendlyDetector {
+class UltimatePakistanVPNDetector {
     constructor() {
-        // Pakistan IP ranges (including VPN IPs that might be from Pakistan)
-        this.pakIPRanges = [
-            // PTCL
-            '101.50.', '101.51.', '101.52.', '101.53.', '101.54.', '101.55.',
-            '110.36.', '110.37.', '110.38.', '110.39.', '110.40.', '110.41.',
-            '111.68.', '111.69.', '111.70.', '111.71.', '111.72.', '111.73.',
-            '119.152.', '119.153.', '119.154.', '119.155.', '119.156.',
-            
-            // Jazz
-            '39.34.', '39.35.', '39.36.', '39.37.', '39.38.', '39.39.',
-            '39.40.', '39.41.', '39.42.', '39.43.', '39.44.', '39.45.',
-            
-            // Telenor
-            '116.0.', '116.1.', '116.2.', '116.3.', '116.4.', '116.5.',
-            
-            // Zong
-            '117.102.', '117.103.', '117.104.', '117.105.', '117.106.',
-            
-            // Ufone
-            '182.176.', '182.177.', '182.178.', '182.179.', '182.180.',
-            
-            // Other Pakistani ISPs
-            '202.69.', '202.70.', '203.82.', '203.83.', '203.84.',
-            '210.56.', '223.29.', '223.30.', '175.107.', '175.108.',
-            '149.40.', '149.50.', '149.60.', '149.70.',
-            '150.129.', '150.130.', '150.140.',
-            '153.92.', '154.16.', '154.17.',
-            '202.47.', '202.48.', '202.49.',
-            '203.81.', '203.82.', '203.83.', '203.84.',
-            '210.1.', '210.2.', '210.3.',
-            '223.176.', '223.177.', '223.178.',
-            
-            // Common VPN IPs used in Pakistan
-            '185.159.', '185.160.', '185.161.', '185.162.',
-            '193.29.', '194.110.', '194.111.',
-            '212.102.', '213.152.', '213.153.',
-            '91.108.', '91.109.', '91.110.',
-            '95.211.', '95.212.', '95.213.',
-            '104.200.', '104.201.', '104.202.',
-            '107.189.', '107.190.', '107.191.',
-            '141.98.', '141.99.', '141.100.',
-            '146.70.', '146.71.', '146.72.',
-            '152.89.', '152.90.', '152.91.',
-            '172.67.', '172.68.', '172.69.',
-            '198.54.', '198.55.', '198.56.'
-        ];
+        // Pakistan IP database (extensive)
+        this.pakIPDatabase = this.loadPakistanIPDatabase();
         
-        // VPN/Proxy indicators (but we'll be lenient with Pakistan users)
-        this.vpnHeaders = [
-            'via', 'x-forwarded-for', 'x-proxy-id', 'cf-connecting-ip',
-            'x-client-ip', 'x-real-ip', 'x-cluster-client-ip',
-            'forwarded', 'proxy-connection', 'x-proxy-user-ip'
-        ];
+        // Known VPN/Proxy providers
+        this.vpnProviders = this.loadVPNProviders();
         
-        // VPN provider IP ranges (common ones)
-        this.commonVPNRanges = [
-            '104.200.', '107.189.', '141.98.', '146.70.', '152.89.',
-            '172.67.', '185.159.', '193.29.', '194.110.', '198.54.',
-            '212.102.', '213.152.', '91.108.', '95.211.'
-        ];
-    }
-    
-    detect(req) {
-        const ip = this.getClientIP(req);
-        const userAgent = (req.headers['user-agent'] || '').toLowerCase();
-        const acceptLanguage = (req.headers['accept-language'] || '').toLowerCase();
+        // User behavior patterns cache
+        this.userPatterns = new Map();
         
-        console.log('\n🔍 Detection Started:', { ip, ua: userAgent.substring(0, 60) });
-        
-        // **CRITICAL LOGIC: Pakistan/VPN users = Normal Page**
-        
-        // 1. Check if it's a Pakistan IP (including VPN IPs)
-        if (this.isPakistanIP(ip)) {
-            console.log('✅ Pakistan IP detected -> Normal Page');
-            return {
-                isPakistan: true,
-                reason: 'PAKISTAN_IP',
-                confidence: 90,
-                message: 'Pakistan IP detected',
-                showPage: false // Normal Page
-            };
-        }
-        
-        // 2. Check for Pakistan signals in User-Agent/Language
-        const pakSignals = this.checkPakistanSignals(userAgent, acceptLanguage);
-        if (pakSignals.found) {
-            console.log(`✅ Pakistan signals detected -> Normal Page: ${pakSignals.reason}`);
-            return {
-                isPakistan: true,
-                reason: pakSignals.reason,
-                confidence: pakSignals.confidence,
-                message: 'Pakistan signals detected',
-                showPage: false // Normal Page
-            };
-        }
-        
-        // 3. Check if using VPN/Proxy
-        const isVPN = this.detectVPN(req);
-        if (isVPN.detected) {
-            console.log(`⚠️ VPN detected: ${isVPN.type}`);
-            
-            // **IMPORTANT: VPN users with Pakistani patterns = Normal Page**
-            const vpnWithPakSignals = this.checkPakistanSignals(userAgent, acceptLanguage);
-            if (vpnWithPakSignals.found) {
-                console.log(`✅ VPN user with Pakistan signals -> Normal Page`);
-                return {
-                    isPakistan: true,
-                    reason: `VPN_WITH_PAK_SIGNALS_${vpnWithPakSignals.reason}`,
-                    confidence: 80,
-                    message: 'VPN user with Pakistan patterns',
-                    showPage: false // Normal Page
-                };
-            }
-            
-            // VPN without Pakistan signals = Special Page
-            console.log(`❌ VPN without Pakistan signals -> Special Page`);
-            return {
-                isPakistan: false,
-                reason: `VPN_NO_PAK_SIGNALS_${isVPN.type}`,
-                confidence: 85,
-                message: 'VPN user without Pakistan patterns',
-                showPage: true // Special Page
-            };
-        }
-        
-        // 4. Check for clear non-Pakistan signals
-        const nonPakSignals = this.checkNonPakistanSignals(userAgent, acceptLanguage);
-        if (nonPakSignals.found) {
-            console.log(`❌ Non-Pakistan signals -> Special Page: ${nonPakSignals.reason}`);
-            return {
-                isPakistan: false,
-                reason: nonPakSignals.reason,
-                confidence: nonPakSignals.confidence,
-                message: 'Non-Pakistan user detected',
-                showPage: true // Special Page
-            };
-        }
-        
-        // 5. Check timezone/location hints
-        const locationHint = this.getLocationHint(req);
-        if (locationHint === 'PAKISTAN') {
-            console.log('📍 Pakistan location hints -> Normal Page');
-            return {
-                isPakistan: true,
-                reason: 'PAKISTAN_LOCATION_HINTS',
-                confidence: 75,
-                message: 'Location hints suggest Pakistan',
-                showPage: false // Normal Page
-            };
-        } else if (locationHint === 'INDIA') {
-            console.log('📍 India location hints -> Special Page');
-            return {
-                isPakistan: false,
-                reason: 'INDIA_LOCATION_HINTS',
-                confidence: 80,
-                message: 'Location hints suggest India',
-                showPage: true // Special Page
-            };
-        }
-        
-        // 6. DEFAULT: Assume Pakistan (Normal Page) - Safer approach
-        console.log('⚠️ Uncertain -> Defaulting to Pakistan (Normal Page)');
-        return {
-            isPakistan: true,
-            reason: 'DEFAULT_ASSUMPTION',
-            confidence: 60,
-            message: 'Default assumption: Pakistan user',
-            showPage: false // Normal Page
+        // VPN detection but Pakistan-friendly
+        this.config = {
+            strictMode: false, // false = lenient for Pakistan users
+            vpnPenalty: 0, // No penalty for VPN users
+            pakistanBonus: 50, // Bonus for Pakistan signals
+            defaultToNormal: true // Default to Normal Page
         };
     }
     
-    isPakistanIP(ip) {
-        if (!ip || ip === 'unknown' || ip === '::1' || ip === '127.0.0.1') {
-            return false;
+    loadPakistanIPDatabase() {
+        return {
+            // Major Pakistani ISPs
+            isps: {
+                ptcl: [
+                    '101.50.', '101.51.', '101.52.', '101.53.', '101.54.', '101.55.',
+                    '110.36.', '110.37.', '110.38.', '110.39.', '110.40.', '110.41.',
+                    '111.68.', '111.69.', '111.70.', '111.71.', '111.72.', '111.73.',
+                    '119.152.', '119.153.', '119.154.', '119.155.', '119.156.',
+                    '203.82.', '203.83.', '203.84.', '203.124.', '203.135.', '203.215.',
+                    '210.56.', '223.29.', '223.30.'
+                ],
+                jazz: [
+                    '39.34.', '39.35.', '39.36.', '39.37.', '39.38.', '39.39.',
+                    '39.40.', '39.41.', '39.42.', '39.43.', '39.44.', '39.45.',
+                    '39.46.', '39.47.', '39.48.', '39.49.'
+                ],
+                telenor: [
+                    '116.0.', '116.1.', '116.2.', '116.3.', '116.4.', '116.5.',
+                    '116.6.', '116.7.', '116.8.', '116.9.', '116.10.', '116.11.'
+                ],
+                zong: [
+                    '117.102.', '117.103.', '117.104.', '117.105.', '117.106.',
+                    '117.107.', '117.108.', '117.109.', '117.110.'
+                ],
+                ufone: [
+                    '182.176.', '182.177.', '182.178.', '182.179.', '182.180.',
+                    '182.181.', '182.182.', '182.183.'
+                ],
+                nayatel: [
+                    '175.107.', '175.108.', '175.109.', '175.110.'
+                ],
+                stormfiber: [
+                    '103.4.', '103.5.', '103.6.'
+                ],
+                transworld: [
+                    '202.69.', '202.70.', '202.71.'
+                ]
+            },
+            
+            // Pakistani data centers/cloud
+            datacenters: [
+                '149.40.', '149.50.', '149.60.', '149.70.',
+                '150.129.', '150.130.', '150.140.', '150.150.',
+                '153.92.', '154.16.', '154.17.', '154.18.',
+                '202.47.', '202.48.', '202.49.', '202.50.',
+                '210.1.', '210.2.', '210.3.', '210.4.',
+                '223.176.', '223.177.', '223.178.', '223.179.'
+            ],
+            
+            // Pakistani mobile networks
+            mobile: [
+                '39.', '116.', '117.', '182.'
+            ],
+            
+            // All Pakistan IPs combined
+            all: function() {
+                return [
+                    ...this.isps.ptcl,
+                    ...this.isps.jazz,
+                    ...this.isps.telenor,
+                    ...this.isps.zong,
+                    ...this.isps.ufone,
+                    ...this.isps.nayatel,
+                    ...this.isps.stormfiber,
+                    ...this.isps.transworld,
+                    ...this.datacenters,
+                    ...this.mobile
+                ];
+            }()
+        };
+    }
+    
+    loadVPNProviders() {
+        return {
+            // Common VPN services (but we're Pakistan-friendly)
+            services: [
+                'nordvpn', 'expressvpn', 'surfshark', 'cyberghost',
+                'pia', 'ipvanish', 'vyprvpn', 'hotspotshield',
+                'tunnelbear', 'windscribe', 'protonvpn', 'hide.me',
+                'purevpn', 'zenmate', 'safervpn', 'ivacy'
+            ],
+            
+            // VPN server IP patterns (but we treat them neutrally)
+            ipRanges: [
+                '185.159.', '185.160.', '185.161.', '185.162.',
+                '193.29.', '194.110.', '194.111.', '194.112.',
+                '212.102.', '213.152.', '213.153.', '213.154.',
+                '91.108.', '91.109.', '91.110.', '91.111.',
+                '95.211.', '95.212.', '95.213.', '95.214.',
+                '104.200.', '104.201.', '104.202.', '104.203.',
+                '107.189.', '107.190.', '107.191.', '107.192.',
+                '141.98.', '141.99.', '141.100.', '141.101.',
+                '146.70.', '146.71.', '146.72.', '146.73.',
+                '152.89.', '152.90.', '152.91.', '152.92.',
+                '172.67.', '172.68.', '172.69.', '172.70.',
+                '198.54.', '198.55.', '198.56.', '198.57.'
+            ],
+            
+            // VPN headers (but we don't penalize)
+            headers: [
+                'via', 'x-forwarded-for', 'x-proxy-id', 'cf-connecting-ip',
+                'x-client-ip', 'x-real-ip', 'x-cluster-client-ip',
+                'forwarded', 'proxy-connection', 'x-proxy-user-ip',
+                'cf-ipcountry', 'cf-ray', 'cf-visitor'
+            ]
+        };
+    }
+    
+    analyzeRequest(req) {
+        const ip = this.getClientIP(req);
+        const userAgent = req.headers['user-agent'] || '';
+        const language = req.headers['accept-language'] || '';
+        const timestamp = Date.now();
+        
+        console.log(`\n🔍 Analyzing Request: ${ip.substring(0, 15)}...`);
+        
+        // Multi-dimensional analysis
+        const analysis = {
+            ip: this.analyzeIP(ip),
+            userAgent: this.analyzeUserAgent(userAgent),
+            language: this.analyzeLanguage(language),
+            headers: this.analyzeHeaders(req.headers),
+            behavior: this.analyzeBehavior(req, ip, timestamp),
+            vpn: this.analyzeVPN(req, ip) // VPN analysis but friendly
+        };
+        
+        // Calculate total Pakistan score
+        let pakistanScore = 0;
+        let reasons = [];
+        
+        // IP Analysis (30 points max)
+        if (analysis.ip.isPakistan) {
+            pakistanScore += 30;
+            reasons.push(`IP_${analysis.ip.reason}`);
         }
         
-        // Local IPs = Pakistan (for testing)
-        if (ip.startsWith('192.168.') || ip.startsWith('10.') || 
+        // User Agent Analysis (25 points max)
+        if (analysis.userAgent.isPakistan) {
+            pakistanScore += analysis.userAgent.score;
+            reasons.push(`UA_${analysis.userAgent.reason}`);
+        }
+        
+        // Language Analysis (20 points max)
+        if (analysis.language.isPakistan) {
+            pakistanScore += analysis.language.score;
+            reasons.push(`LANG_${analysis.language.reason}`);
+        }
+        
+        // Header Analysis (15 points max)
+        if (analysis.headers.isPakistan) {
+            pakistanScore += analysis.headers.score;
+            reasons.push(`HEADER_${analysis.headers.reason}`);
+        }
+        
+        // Behavior Analysis (10 points max)
+        if (analysis.behavior.suggestsPakistan) {
+            pakistanScore += analysis.behavior.score;
+            reasons.push(`BEHAVIOR_${analysis.behavior.reason}`);
+        }
+        
+        // **CRITICAL: VPN does NOT reduce score!**
+        // Instead, check if VPN user shows Pakistan patterns
+        if (analysis.vpn.detected) {
+            console.log(`⚠️ VPN detected but no penalty: ${analysis.vpn.type}`);
+            
+            // If VPN user has Pakistan patterns, INCREASE confidence
+            if (analysis.ip.isPakistan || analysis.userAgent.isPakistan || 
+                analysis.language.isPakistan || analysis.headers.isPakistan) {
+                pakistanScore += 10; // Bonus for Pakistan VPN users
+                reasons.push(`VPN_PAK_BONUS`);
+            }
+        }
+        
+        // Ensure minimum score for any Pakistan signal
+        const hasAnyPakistanSignal = analysis.ip.isPakistan || 
+                                    analysis.userAgent.isPakistan || 
+                                    analysis.language.isPakistan || 
+                                    analysis.headers.isPakistan;
+        
+        if (hasAnyPakistanSignal) {
+            pakistanScore = Math.max(pakistanScore, 40); // Minimum 40 if any Pakistan signal
+        }
+        
+        // Final decision
+        const isPakistan = pakistanScore >= 30 || this.config.defaultToNormal;
+        
+        return {
+            isPakistan,
+            score: pakistanScore,
+            confidence: Math.min(100, pakistanScore),
+            reasons,
+            analysis,
+            showPage: !isPakistan // false = Normal Page, true = Special Page
+        };
+    }
+    
+    analyzeIP(ip) {
+        if (!ip || ip === 'unknown') {
+            return { isPakistan: false, reason: 'NO_IP', score: 0 };
+        }
+        
+        // Local/testing IPs = Pakistan
+        if (ip === '127.0.0.1' || ip === '::1' || 
+            ip.startsWith('192.168.') || ip.startsWith('10.') ||
             ip.startsWith('172.16.') || ip.startsWith('172.17.') ||
             ip.startsWith('172.18.') || ip.startsWith('172.19.') ||
             ip.startsWith('172.20.') || ip.startsWith('172.21.') ||
@@ -195,188 +241,283 @@ class PakistanFriendlyDetector {
             ip.startsWith('172.26.') || ip.startsWith('172.27.') ||
             ip.startsWith('172.28.') || ip.startsWith('172.29.') ||
             ip.startsWith('172.30.') || ip.startsWith('172.31.')) {
-            return true;
+            return { isPakistan: true, reason: 'LOCAL_IP', score: 30 };
         }
         
-        // Check against Pakistan IP ranges
-        for (const range of this.pakIPRanges) {
+        // Check all Pakistan IP ranges
+        for (const range of this.pakIPDatabase.all) {
             if (ip.startsWith(range)) {
-                return true;
+                return { isPakistan: true, reason: `PAK_RANGE_${range}`, score: 30 };
             }
         }
         
-        return false;
+        // Check if IP looks like Pakistan IP (pattern matching)
+        const ipParts = ip.split('.');
+        if (ipParts.length === 4) {
+            const firstOctet = parseInt(ipParts[0]);
+            const secondOctet = parseInt(ipParts[1]);
+            
+            // Common Pakistan IP patterns
+            if (firstOctet === 101 || firstOctet === 110 || firstOctet === 111) {
+                return { isPakistan: true, reason: 'PAK_PATTERN', score: 25 };
+            }
+            if (firstOctet === 39 && secondOctet >= 34 && secondOctet <= 49) {
+                return { isPakistan: true, reason: 'JAZZ_PATTERN', score: 30 };
+            }
+            if (firstOctet === 116 && secondOctet <= 11) {
+                return { isPakistan: true, reason: 'TELENOR_PATTERN', score: 30 };
+            }
+            if (firstOctet === 117 && secondOctet >= 102 && secondOctet <= 110) {
+                return { isPakistan: true, reason: 'ZONG_PATTERN', score: 30 };
+            }
+            if (firstOctet === 182 && secondOctet >= 176 && secondOctet <= 183) {
+                return { isPakistan: true, reason: 'UFONE_PATTERN', score: 30 };
+            }
+        }
+        
+        // If no Pakistan IP detected, return false
+        return { isPakistan: false, reason: 'NON_PAK_IP', score: 0 };
     }
     
-    checkPakistanSignals(userAgent, language) {
-        const pakKeywords = [
-            // ISPs & Networks
-            'jazz', 'telenor', 'zong', 'ufone', 'mobilink', 'warid', 'ptcl',
-            'nayatel', 'witribe', 'stormfiber', 'transworld', 'optix',
-            'cybernet', 'comsats', 'supernet', 'worldcall', 'linkdotnet',
-            
-            // Cities & Locations
-            'karachi', 'lahore', 'islamabad', 'rawalpindi', 'multan',
-            'peshawar', 'quetta', 'faisalabad', 'hyderabad', 'sialkot',
-            'gujranwala', 'bahawalpur', 'sargodha', 'sukkur', 'larkana',
-            'sheikhupura', 'mirpur', 'jhelum', 'mardan', 'kasur',
-            
-            // Languages
-            'ur', 'ur-pk', 'ur_pk', 'ps', 'sd', 'pa', 'balochi',
-            'sindhi', 'punjabi', 'saraiki', 'pashto', 'hindko',
-            
-            // Apps & Services
-            'easypaisa', 'jazzcash', 'upaisa', 'sadapay', 'nayapay',
-            'daraz', 'foodpanda', 'bykea', 'careem', 'indrive',
-            'airlift', 'swvl', 'bookme', 'pakwheels', 'zameen',
-            'rozee', 'ilmkidunya', 'taleemabad',
-            
-            // Devices
-            'qmobile', 'infinix', 'tecno', 'voice', 'gfive', 'dany',
-            
-            // Country Codes
-            'pk', 'pak', 'pakistan', '+92', '.pk'
+    analyzeUserAgent(ua) {
+        if (!ua) {
+            return { isPakistan: false, score: 0, reason: 'NO_UA' };
+        }
+        
+        const uaLower = ua.toLowerCase();
+        let score = 0;
+        let reason = '';
+        
+        // Pakistan ISP patterns
+        const pakISPs = ['jazz', 'telenor', 'zong', 'ufone', 'mobilink', 'warid', 
+                        'ptcl', 'nayatel', 'witribe', 'stormfiber', 'transworld'];
+        
+        for (const isp of pakISPs) {
+            if (uaLower.includes(isp)) {
+                score += 15;
+                reason = `ISP_${isp.toUpperCase()}`;
+                break;
+            }
+        }
+        
+        // Pakistan city patterns
+        const pakCities = ['karachi', 'lahore', 'islamabad', 'rawalpindi', 'multan',
+                          'peshawar', 'quetta', 'faisalabad', 'hyderabad', 'sialkot'];
+        
+        for (const city of pakCities) {
+            if (uaLower.includes(city)) {
+                score += 10;
+                reason = reason || `CITY_${city.toUpperCase()}`;
+                break;
+            }
+        }
+        
+        // Pakistan app patterns
+        const pakApps = ['easypaisa', 'jazzcash', 'upaisa', 'sadapay', 'nayapay',
+                        'daraz', 'foodpanda', 'bykea', 'careem', 'indrive'];
+        
+        for (const app of pakApps) {
+            if (uaLower.includes(app)) {
+                score += 12;
+                reason = reason || `APP_${app.toUpperCase()}`;
+                break;
+            }
+        }
+        
+        // Pakistan device patterns
+        const pakDevices = ['qmobile', 'infinix', 'tecno', 'voice', 'gfive', 'dany'];
+        
+        for (const device of pakDevices) {
+            if (uaLower.includes(device)) {
+                score += 8;
+                reason = reason || `DEVICE_${device.toUpperCase()}`;
+                break;
+            }
+        }
+        
+        // Country codes
+        if (uaLower.includes('pk') || uaLower.includes('pak') || uaLower.includes('pakistan')) {
+            score += 20;
+            reason = reason || 'COUNTRY_CODE';
+        }
+        
+        // Language hints
+        if (uaLower.includes('urdu') || uaLower.includes('ur-') || uaLower.includes('ps-')) {
+            score += 15;
+            reason = reason || 'LANGUAGE_HINT';
+        }
+        
+        return {
+            isPakistan: score > 0,
+            score: Math.min(25, score),
+            reason: reason || 'NO_PAK_SIGNALS'
+        };
+    }
+    
+    analyzeLanguage(lang) {
+        if (!lang) {
+            return { isPakistan: false, score: 0, reason: 'NO_LANG' };
+        }
+        
+        const langLower = lang.toLowerCase();
+        let score = 0;
+        let reason = '';
+        
+        // Pakistan language codes
+        const pakLanguages = [
+            'ur', 'ur-pk', 'ur_pk', 'ps', 'sd', 'pa', 
+            'balochi', 'sindhi', 'punjabi', 'saraiki', 'pashto', 'hindko'
         ];
         
-        const combined = userAgent + ' ' + language;
-        
-        for (const keyword of pakKeywords) {
-            if (combined.toLowerCase().includes(keyword.toLowerCase())) {
-                return {
-                    found: true,
-                    reason: `PAK_KEYWORD_${keyword.toUpperCase()}`,
-                    confidence: 85
-                };
+        for (const language of pakLanguages) {
+            if (langLower.includes(language)) {
+                score += 20;
+                reason = `LANG_${language.toUpperCase()}`;
+                break;
             }
         }
         
-        // Check specific language patterns
-        if (language.includes('ur') || language.includes('ps') || 
-            language.includes('sd') || language.includes('pa')) {
-            return {
-                found: true,
-                reason: 'PAKISTAN_LANGUAGE',
-                confidence: 90
-            };
+        // Country codes in language
+        if (langLower.includes('pk') || langLower.includes('pak')) {
+            score += 15;
+            reason = reason || 'LANG_COUNTRY_CODE';
         }
         
-        return { found: false };
+        // Region hints
+        if (langLower.includes('asia') && (langLower.includes('south') || langLower.includes('central'))) {
+            score += 10;
+            reason = reason || 'SOUTH_ASIA_REGION';
+        }
+        
+        return {
+            isPakistan: score > 0,
+            score: Math.min(20, score),
+            reason: reason || 'NO_PAK_LANG'
+        };
     }
     
-    detectVPN(req) {
-        const headers = req.headers;
-        let vpnType = null;
+    analyzeHeaders(headers) {
+        let score = 0;
+        let reason = '';
         
-        // Check VPN headers
-        for (const header of this.vpnHeaders) {
-            if (headers[header]) {
-                vpnType = header.toUpperCase();
-                break;
-            }
+        // Timezone analysis (PKT = UTC+5 = -300 minutes)
+        const timezone = headers['x-timezone-offset'] || headers['timezone-offset'];
+        if (timezone && parseInt(timezone) === -300) {
+            score += 15;
+            reason = 'PKT_TIMEZONE';
         }
         
-        // Check IP against common VPN ranges
-        const ip = this.getClientIP(req);
-        for (const range of this.commonVPNRanges) {
-            if (ip.startsWith(range)) {
-                vpnType = 'VPN_IP_RANGE';
-                break;
-            }
+        // Accept-Language already analyzed, but check for Urdu/Pakistan
+        const acceptLang = headers['accept-language'] || '';
+        if (acceptLang.includes('ur') || acceptLang.includes('ps')) {
+            score += 10;
+            reason = reason || 'HEADER_LANGUAGE';
         }
         
-        // Check User-Agent for VPN keywords
-        const userAgent = (headers['user-agent'] || '').toLowerCase();
-        const vpnKeywords = ['vpn', 'proxy', 'tor', 'anonymizer', 'hideip'];
-        for (const keyword of vpnKeywords) {
-            if (userAgent.includes(keyword)) {
-                vpnType = 'VPN_USER_AGENT';
-                break;
+        // Platform/device hints
+        const platform = headers['sec-ch-ua-platform'] || '';
+        if (platform.includes('Android') || platform.includes('iOS')) {
+            // Mobile users more likely in Pakistan
+            score += 5;
+            reason = reason || 'MOBILE_PLATFORM';
+        }
+        
+        return {
+            isPakistan: score > 0,
+            score: Math.min(15, score),
+            reason: reason || 'NO_HEADER_SIGNALS'
+        };
+    }
+    
+    analyzeBehavior(req, ip, timestamp) {
+        // Track user patterns
+        const userKey = this.getUserKey(req);
+        
+        if (!this.userPatterns.has(userKey)) {
+            this.userPatterns.set(userKey, {
+                firstSeen: timestamp,
+                requestCount: 1,
+                lastRequest: timestamp,
+                patterns: []
+            });
+        } else {
+            const userData = this.userPatterns.get(userKey);
+            userData.requestCount++;
+            userData.lastRequest = timestamp;
+            
+            // Check if behavior suggests Pakistan (frequent requests during PK hours)
+            const now = new Date(timestamp);
+            const hourUTC = now.getUTCHours();
+            const hourPKT = (hourUTC + 5) % 24; // Convert to PKT
+            
+            // Pakistan peak hours: 10 AM - 12 PM, 6 PM - 11 PM PKT
+            const isPeakHour = (hourPKT >= 10 && hourPKT <= 12) || (hourPKT >= 18 && hourPKT <= 23);
+            
+            if (isPeakHour && userData.requestCount > 3) {
+                return {
+                    suggestsPakistan: true,
+                    score: 10,
+                    reason: 'PK_PEAK_ACTIVITY'
+                };
             }
         }
         
         return {
-            detected: vpnType !== null,
-            type: vpnType || 'UNKNOWN'
+            suggestsPakistan: false,
+            score: 0,
+            reason: 'NO_BEHAVIOR_PATTERN'
         };
     }
     
-    checkNonPakistanSignals(userAgent, language) {
-        // India specific patterns
-        const indiaPatterns = [
-            'in', 'india', 'indian', 'bharat', 'hindi', 'tamil', 'telugu',
-            'marathi', 'bengali', 'gujarati', 'kannada', 'malayalam',
-            'airtel', 'jio', 'vi ', 'vodafone idea', 'bsnl', 'mtnl',
-            'delhi', 'mumbai', 'bangalore', 'chennai', 'kolkata',
-            'hyderabad', 'ahmedabad', 'pune', 'surat', 'jaipur',
-            'in-en', 'en-in', 'hi-in', 'ta-in', 'te-in',
-            '+91', '91-', '.in ', '.co.in', 'indianapolis'
-        ];
+    analyzeVPN(req, ip) {
+        const headers = req.headers;
+        let detected = false;
+        let type = '';
         
-        const combined = userAgent + ' ' + language;
-        
-        for (const pattern of indiaPatterns) {
-            if (combined.toLowerCase().includes(pattern.toLowerCase())) {
-                return {
-                    found: true,
-                    reason: `INDIA_${pattern.toUpperCase()}`,
-                    confidence: 95
-                };
+        // Check VPN headers
+        for (const header of this.vpnProviders.headers) {
+            if (headers[header]) {
+                detected = true;
+                type = `HEADER_${header.toUpperCase()}`;
+                break;
             }
         }
         
-        // Other non-Pakistan countries
-        const nonPakCountries = [
-            { pattern: 'en-us', country: 'USA', confidence: 90 },
-            { pattern: 'en-gb', country: 'UK', confidence: 90 },
-            { pattern: 'en-au', country: 'AUSTRALIA', confidence: 90 },
-            { pattern: 'en-ca', country: 'CANADA', confidence: 90 },
-            { pattern: 'zh-cn', country: 'CHINA', confidence: 95 },
-            { pattern: 'ja-jp', country: 'JAPAN', confidence: 95 },
-            { pattern: 'ko-kr', country: 'KOREA', confidence: 95 },
-            { pattern: 'ru-ru', country: 'RUSSIA', confidence: 90 },
-            { pattern: 'ar-sa', country: 'SAUDI_ARABIA', confidence: 90 },
-            { pattern: 'ae', country: 'UAE', confidence: 90 },
-            { pattern: 'de-de', country: 'GERMANY', confidence: 90 },
-            { pattern: 'fr-fr', country: 'FRANCE', confidence: 90 },
-            { pattern: 'es-es', country: 'SPAIN', confidence: 90 }
-        ];
-        
-        for (const country of nonPakCountries) {
-            if (combined.toLowerCase().includes(country.pattern.toLowerCase())) {
-                return {
-                    found: true,
-                    reason: `${country.country}_DETECTED`,
-                    confidence: country.confidence
-                };
+        // Check VPN IP ranges
+        for (const range of this.vpnProviders.ipRanges) {
+            if (ip.startsWith(range)) {
+                detected = true;
+                type = 'VPN_IP_RANGE';
+                break;
             }
         }
         
-        return { found: false };
+        // Check VPN service names in User-Agent
+        const userAgent = (headers['user-agent'] || '').toLowerCase();
+        for (const vpn of this.vpnProviders.services) {
+            if (userAgent.includes(vpn)) {
+                detected = true;
+                type = `SERVICE_${vpn.toUpperCase()}`;
+                break;
+            }
+        }
+        
+        return { detected, type };
     }
     
-    getLocationHint(req) {
-        const headers = req.headers;
+    getUserKey(req) {
+        // Create a unique key for user tracking
+        const components = [
+            this.getClientIP(req),
+            req.headers['user-agent'] || '',
+            req.headers['accept-language'] || ''
+        ];
         
-        // Check timezone (PKT = UTC+5 = -300 minutes)
-        const timezone = headers['x-timezone-offset'] || headers['timezone-offset'];
-        if (timezone) {
-            const offset = parseInt(timezone);
-            if (offset === -300) { // Pakistan
-                return 'PAKISTAN';
-            } else if (offset === -330) { // India
-                return 'INDIA';
-            }
-        }
-        
-        // Check language for country hints
-        const acceptLanguage = (headers['accept-language'] || '').toLowerCase();
-        if (acceptLanguage.includes('en-in') || acceptLanguage.includes('hi-in')) {
-            return 'INDIA';
-        } else if (acceptLanguage.includes('ur') || acceptLanguage.includes('ps')) {
-            return 'PAKISTAN';
-        }
-        
-        return null;
+        return crypto
+            .createHash('md5')
+            .update(components.join('|'))
+            .digest('hex')
+            .substring(0, 12);
     }
     
     getClientIP(req) {
@@ -389,56 +530,73 @@ class PakistanFriendlyDetector {
     }
 }
 
-const detector = new PakistanFriendlyDetector();
+// Initialize detector
+const detector = new UltimatePakistanVPNDetector();
+
+// ============ MIDDLEWARE ============
+app.use((req, res, next) => {
+    req.startTime = Date.now();
+    req.requestId = crypto.randomBytes(4).toString('hex');
+    console.log(`[${req.requestId}] ${req.method} ${req.url}`);
+    next();
+});
 
 // ============ API ENDPOINTS ============
 
 app.get('/detect', (req, res) => {
     try {
-        console.log('\n🎯 ========== NEW REQUEST ==========');
+        console.log(`[${req.requestId}] Starting detection...`);
         
-        const detection = detector.detect(req);
+        const analysis = detector.analyzeRequest(req);
         const clientIP = detector.getClientIP(req);
-        const isVPN = detector.detectVPN(req);
         
-        console.log(`📊 IP: ${clientIP}`);
-        console.log(`🔍 VPN: ${isVPN.detected ? 'YES' : 'NO'}`);
-        console.log(`🇵🇰 Pakistan: ${detection.isPakistan ? 'YES' : 'NO'}`);
-        console.log(`📺 Show Page: ${detection.showPage ? 'SPECIAL' : 'NORMAL'}`);
-        console.log(`📝 Reason: ${detection.reason}`);
+        console.log(`[${req.requestId}] Detection Result:`, {
+            isPakistan: analysis.isPakistan,
+            score: analysis.score,
+            showPage: analysis.showPage ? 'SPECIAL' : 'NORMAL',
+            reasons: analysis.reasons
+        });
         
         const response = {
-            showPage: detection.showPage, // false = Normal Page, true = Special Page
+            showPage: analysis.showPage, // false = Normal Page, true = Special Page
             decision: {
-                isPakistan: detection.isPakistan,
-                usingVPN: isVPN.detected,
-                vpnType: isVPN.type,
-                reason: detection.reason,
-                confidence: detection.confidence,
-                message: detection.message
+                isPakistan: analysis.isPakistan,
+                score: analysis.score,
+                confidence: analysis.confidence,
+                reasons: analysis.reasons,
+                vpnDetected: analysis.analysis.vpn.detected,
+                vpnType: analysis.analysis.vpn.type,
+                message: analysis.isPakistan ? 
+                    'Pakistan user detected' : 
+                    'Non-Pakistan user detected'
             },
             userInfo: {
                 ip: clientIP,
                 userAgent: req.headers['user-agent']?.substring(0, 80) || 'unknown',
                 language: req.headers['accept-language'] || 'unknown',
-                timezone: req.headers['x-timezone-offset'] || req.headers['timezone-offset'] || 'unknown'
+                fingerprint: detector.getUserKey(req)
+            },
+            analysis: {
+                ip: analysis.analysis.ip,
+                userAgent: analysis.analysis.userAgent,
+                language: analysis.analysis.language,
+                headers: analysis.analysis.headers
             },
             timestamp: new Date().toISOString(),
-            message: detection.showPage ? 
+            processingTime: Date.now() - req.startTime,
+            message: analysis.showPage ? 
                 "🌍 Special Page (WITH Recovery section)" : 
                 "🇵🇰 Normal Page (NO Recovery section)"
         };
         
-        console.log(`✅ Final: ${response.message}`);
-        console.log('===================================\n');
+        console.log(`[${req.requestId}] Response: ${response.message}`);
         
         res.json(response);
         
     } catch (error) {
-        console.error('❌ Error:', error);
-        // On error, show Normal Page (safer for Pakistan users)
+        console.error(`[${req.requestId}] Error:`, error);
         res.json({
-            showPage: false, // Normal Page
+            showPage: false, // Default to Normal Page on error
             error: 'Detection failed, defaulting to Normal Page',
             timestamp: new Date().toISOString(),
             message: "Default: Normal Page"
@@ -446,50 +604,82 @@ app.get('/detect', (req, res) => {
     }
 });
 
-// Test endpoint
-app.get('/test', (req, res) => {
-    const detection = detector.detect(req);
-    const isVPN = detector.detectVPN(req);
+// Advanced test endpoint
+app.get('/analyze', (req, res) => {
+    const analysis = detector.analyzeRequest(req);
     
     res.json({
-        yourStatus: {
-            ip: detector.getClientIP(req),
-            isVPN: isVPN.detected,
-            isPakistan: detection.isPakistan,
-            showPage: detection.showPage ? 'SPECIAL PAGE' : 'NORMAL PAGE',
-            reason: detection.reason
+        detailedAnalysis: analysis,
+        interpretation: {
+            isPakistan: analysis.isPakistan,
+            showPage: analysis.showPage ? 'SPECIAL' : 'NORMAL',
+            explanation: analysis.reasons.join(', ')
         },
-        
-        scenarios: {
-            pakistanWithoutVPN: {
-                description: 'Pakistan user without VPN',
-                result: 'Normal Page',
-                testCommand: 'curl -H "User-Agent: Mozilla/5.0 (Android; Pakistan; Jazz)" http://localhost:3000/detect'
-            },
-            pakistanWithVPN: {
-                description: 'Pakistan user WITH VPN',
-                result: 'Normal Page (IMPORTANT!)',
-                testCommand: 'curl -H "User-Agent: Mozilla/5.0 (Android; Pakistan; Jazz VPN)" -H "X-Forwarded-For: 185.159.100.100" http://localhost:3000/detect'
-            },
-            indiaWithoutVPN: {
-                description: 'India user without VPN',
-                result: 'Special Page',
-                testCommand: 'curl -H "User-Agent: Mozilla/5.0 (Android; India; Airtel)" http://localhost:3000/detect'
-            },
-            indiaWithVPN: {
-                description: 'India user WITH VPN',
-                result: 'Special Page',
-                testCommand: 'curl -H "User-Agent: Mozilla/5.0 (Android; India; Airtel VPN)" http://localhost:3000/detect'
+        recommendations: analysis.isPakistan ? [] : [
+            'Add Pakistan signals to User-Agent',
+            'Set accept-language to ur-pk',
+            'Use Pakistan timezone (UTC+5)',
+            'Include Pakistan ISP name in headers'
+        ]
+    });
+});
+
+// VPN test endpoint
+app.get('/test-vpn', (req, res) => {
+    // Create test requests with VPN
+    const testCases = [
+        {
+            name: 'Pakistan User with VPN Headers',
+            headers: {
+                'user-agent': 'Mozilla/5.0 (Android; PK; Jazz)',
+                'accept-language': 'ur-pk,en;q=0.9',
+                'x-forwarded-for': '185.159.100.100, 101.50.200.100'
             }
         },
-        
-        logic: {
-            rule1: 'Pakistan users (with or without VPN) = Normal Page',
-            rule2: 'VPN users with Pakistan patterns = Normal Page',
-            rule3: 'India users (with or without VPN) = Special Page',
-            rule4: 'Other countries = Special Page',
-            rule5: 'Uncertain = Normal Page (safer for Pakistan users)'
+        {
+            name: 'Pakistan User with VPN IP',
+            headers: {
+                'user-agent': 'Mozilla/5.0 (iPhone; Pakistan)',
+                'accept-language': 'en-pk',
+                'x-real-ip': '185.159.100.100'
+            }
+        },
+        {
+            name: 'India User with VPN',
+            headers: {
+                'user-agent': 'Mozilla/5.0 (Android; India; Airtel VPN)',
+                'accept-language': 'en-in,hi;q=0.9',
+                'via': '1.1 nordvpn'
+            }
         }
+    ];
+    
+    const results = testCases.map(testCase => {
+        const mockReq = {
+            headers: { ...req.headers, ...testCase.headers },
+            ip: '185.159.100.100'
+        };
+        
+        const analysis = detector.analyzeRequest(mockReq);
+        
+        return {
+            testCase: testCase.name,
+            isPakistan: analysis.isPakistan,
+            showPage: analysis.showPage ? 'SPECIAL' : 'NORMAL',
+            score: analysis.score,
+            vpnDetected: analysis.analysis.vpn.detected,
+            reasons: analysis.reasons
+        };
+    });
+    
+    res.json({
+        testResults: results,
+        summary: {
+            totalTests: results.length,
+            pakistanNormalPages: results.filter(r => !r.showPage).length,
+            specialPages: results.filter(r => r.showPage).length
+        },
+        logic: 'VPN does NOT affect Pakistan detection. Pakistan users get Normal Page regardless of VPN.'
     });
 });
 
@@ -500,7 +690,7 @@ app.get('/force-normal', (req, res) => {
         forced: true,
         message: "FORCED: Normal Page",
         timestamp: new Date().toISOString(),
-        note: "Bypasses all detection logic - shows Normal Page"
+        note: "Bypasses all detection - shows Normal Page"
     });
 });
 
@@ -510,20 +700,24 @@ app.get('/force-special', (req, res) => {
         forced: true,
         message: "FORCED: Special Page",
         timestamp: new Date().toISOString(),
-        note: "Bypasses all detection logic - shows Special Page"
+        note: "Bypasses all detection - shows Special Page"
     });
 });
 
-// Health check
-app.get('/health', (req, res) => {
+// Statistics
+app.get('/stats', (req, res) => {
     res.json({
-        status: 'RUNNING',
-        version: 'PAKISTAN-VPN-NORMAL-1.0',
-        logic: 'Pakistan users (with/without VPN) = Normal Page, Others = Special Page',
-        ipRanges: detector.pakIPRanges.length + ' ranges loaded',
-        vpnRanges: detector.commonVPNRanges.length + ' VPN ranges known',
-        default: 'Uncertain = Normal Page (safer)',
-        timestamp: new Date().toISOString()
+        detectorStats: {
+            pakIPRanges: detector.pakIPDatabase.all.length,
+            vpnProviders: detector.vpnProviders.services.length,
+            trackedUsers: detector.userPatterns.size,
+            config: detector.config
+        },
+        system: {
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            nodeVersion: process.version
+        }
     });
 });
 
@@ -533,114 +727,159 @@ app.get('/', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Pakistan & VPN Friendly Detection</title>
+            <title>Ultimate Pakistan Detection (VPN Friendly)</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body { font-family: Arial, sans-serif; margin: 40px; background: #f0f9ff; }
-                .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-                h1 { color: #1e40af; border-bottom: 3px solid #1e40af; padding-bottom: 10px; }
-                .card { background: #f8fafc; padding: 20px; margin: 15px 0; border-radius: 10px; border-left: 5px solid #3b82f6; }
-                .pakistan { background: #dbeafe; border-left-color: #1d4ed8; }
-                .normal { color: #059669; font-weight: bold; }
-                .special { color: #dc2626; font-weight: bold; }
-                .endpoint { background: #e0f2fe; padding: 15px; margin: 10px 0; border-radius: 8px; }
-                .endpoint a { color: #0369a1; text-decoration: none; font-weight: bold; }
-                .logic-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                .logic-table th, .logic-table td { padding: 12px; text-align: left; border: 1px solid #cbd5e1; }
-                .logic-table th { background: #1e40af; color: white; }
-                .logic-table tr:nth-child(even) { background: #f1f5f9; }
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; 
+                       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+                .container { max-width: 1200px; margin: 0 auto; }
+                .card { background: white; border-radius: 20px; padding: 40px; margin: 20px 0; 
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+                h1 { color: white; text-align: center; margin-bottom: 30px; font-size: 2.8em; 
+                     text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+                h2 { color: #333; margin-bottom: 25px; font-size: 1.8em; border-bottom: 3px solid #667eea; padding-bottom: 10px; }
+                .logic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; margin: 30px 0; }
+                .logic-card { background: #f8f9fa; padding: 25px; border-radius: 15px; border-left: 5px solid; }
+                .pakistan-card { border-left-color: #059669; }
+                .special-card { border-left-color: #dc2626; }
+                .status { display: inline-block; padding: 8px 20px; border-radius: 50px; font-weight: bold; margin: 5px; }
+                .normal { background: #d1fae5; color: #059669; }
+                .special { background: #fee2e2; color: #dc2626; }
+                .endpoints { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+                .endpoint { background: #f1f5f9; padding: 20px; border-radius: 12px; transition: transform 0.3s; }
+                .endpoint:hover { transform: translateY(-5px); background: #e2e8f0; }
+                .endpoint a { color: #4f46e5; text-decoration: none; font-weight: 600; font-size: 1.1em; }
+                .endpoint p { color: #64748b; margin-top: 10px; font-size: 0.95em; }
+                .test-buttons { display: flex; gap: 15px; margin: 30px 0; flex-wrap: wrap; }
+                .test-btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.3s; }
+                .test-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+                .pak-btn { background: #10b981; color: white; }
+                .vpn-btn { background: #8b5cf6; color: white; }
+                .india-btn { background: #ef4444; color: white; }
+                .response-box { background: #1e293b; color: #f1f5f9; padding: 20px; border-radius: 10px; margin-top: 20px; 
+                                font-family: monospace; max-height: 400px; overflow-y: auto; }
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>🇵🇰 Pakistan & VPN Friendly Detection Server</h1>
+                <h1>🇵🇰 Ultimate Pakistan Detection</h1>
                 
-                <div class="card pakistan">
-                    <h3>🎯 KEY LOGIC:</h3>
-                    <p><span class="normal">Pakistan users (with or without VPN) = Normal Page</span></p>
-                    <p><span class="special">All other users = Special Page (with Recovery section)</span></p>
-                </div>
-                
-                <table class="logic-table">
-                    <thead>
-                        <tr>
-                            <th>User Type</th>
-                            <th>VPN Status</th>
-                            <th>Page Shown</th>
-                            <th>Recovery Section</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>🇵🇰 Pakistan User</td>
-                            <td>Without VPN</td>
-                            <td class="normal">Normal Page</td>
-                            <td>NO</td>
-                        </tr>
-                        <tr>
-                            <td>🇵🇰 Pakistan User</td>
-                            <td>WITH VPN</td>
-                            <td class="normal">Normal Page</td>
-                            <td>NO</td>
-                        </tr>
-                        <tr>
-                            <td>🇮🇳 India User</td>
-                            <td>Without VPN</td>
-                            <td class="special">Special Page</td>
-                            <td>YES</td>
-                        </tr>
-                        <tr>
-                            <td>🇮🇳 India User</td>
-                            <td>WITH VPN</td>
-                            <td class="special">Special Page</td>
-                            <td>YES</td>
-                        </tr>
-                        <tr>
-                            <td>🇺🇸 USA User</td>
-                            <td>Any</td>
-                            <td class="special">Special Page</td>
-                            <td>YES</td>
-                        </tr>
-                        <tr>
-                            <td>🌍 Other Countries</td>
-                            <td>Any</td>
-                            <td class="special">Special Page</td>
-                            <td>YES</td>
-                        </tr>
-                    </tbody>
-                </table>
-                
-                <h3>📡 API Endpoints:</h3>
-                <div class="endpoint">
-                    <a href="/detect" target="_blank">GET /detect</a>
-                    <p>Main detection endpoint - checks if user gets Normal or Special page</p>
-                </div>
-                <div class="endpoint">
-                    <a href="/test" target="_blank">GET /test</a>
-                    <p>Test your current status with different scenarios</p>
-                </div>
-                <div class="endpoint">
-                    <a href="/force-normal" target="_blank">GET /force-normal</a>
-                    <p>Force Normal Page (bypass detection)</p>
-                </div>
-                <div class="endpoint">
-                    <a href="/force-special" target="_blank">GET /force-special</a>
-                    <p>Force Special Page (bypass detection)</p>
+                <div class="card">
+                    <h2>🎯 Smart Detection Logic</h2>
+                    <div class="logic-grid">
+                        <div class="logic-card pakistan-card">
+                            <h3>Pakistan Users</h3>
+                            <p>With or Without VPN</p>
+                            <div class="status normal">Normal Page</div>
+                            <p style="margin-top: 10px;">No Recovery section</p>
+                        </div>
+                        <div class="logic-card special-card">
+                            <h3>Non-Pakistan Users</h3>
+                            <p>Including India, USA, etc.</p>
+                            <div class="status special">Special Page</div>
+                            <p style="margin-top: 10px;">WITH Recovery section</p>
+                        </div>
+                    </div>
+                    
+                    <div style="background: #dbeafe; padding: 20px; border-radius: 10px; margin: 25px 0;">
+                        <h3>⚡ Key Feature: VPN Friendly</h3>
+                        <p>VPN detection does NOT affect Pakistan users. Pakistan VPN users still get Normal Page!</p>
+                    </div>
                 </div>
                 
                 <div class="card">
-                    <h3>⚡ Quick Test Commands:</h3>
-                    <pre>
-# Test Pakistan user with VPN
-curl -H "X-Forwarded-For: 185.159.100.100" http://localhost:${PORT}/detect
-
-# Test India user
-curl -H "User-Agent: Mozilla/5.0 (Android; India; Airtel)" http://localhost:${PORT}/detect
-
-# Force Normal Page
-curl http://localhost:${PORT}/force-normal
-                    </pre>
+                    <h2>🔧 Test Endpoints</h2>
+                    <div class="test-buttons">
+                        <button class="test-btn pak-btn" onclick="testPakistan()">Test Pakistan User</button>
+                        <button class="test-btn vpn-btn" onclick="testPakistanVPN()">Test Pakistan + VPN</button>
+                        <button class="test-btn india-btn" onclick="testIndia()">Test India User</button>
+                        <button class="test-btn" onclick="forceNormal()" style="background:#3b82f6;color:white">Force Normal Page</button>
+                    </div>
+                    
+                    <div id="response" class="response-box">
+                        <!-- Response will appear here -->
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2>📡 API Endpoints</h2>
+                    <div class="endpoints">
+                        <div class="endpoint">
+                            <a href="/detect" target="_blank">GET /detect</a>
+                            <p>Main detection endpoint</p>
+                        </div>
+                        <div class="endpoint">
+                            <a href="/analyze" target="_blank">GET /analyze</a>
+                            <p>Detailed analysis</p>
+                        </div>
+                        <div class="endpoint">
+                            <a href="/test-vpn" target="_blank">GET /test-vpn</a>
+                            <p>VPN test scenarios</p>
+                        </div>
+                        <div class="endpoint">
+                            <a href="/stats" target="_blank">GET /stats</a>
+                            <p>System statistics</p>
+                        </div>
+                        <div class="endpoint">
+                            <a href="/force-normal" target="_blank">GET /force-normal</a>
+                            <p>Force Normal Page</p>
+                        </div>
+                        <div class="endpoint">
+                            <a href="/force-special" target="_blank">GET /force-special</a>
+                            <p>Force Special Page</p>
+                        </div>
+                    </div>
                 </div>
             </div>
+            
+            <script>
+                async function testEndpoint(headers) {
+                    const responseBox = document.getElementById('response');
+                    responseBox.innerHTML = 'Testing...';
+                    
+                    try {
+                        const response = await fetch('/detect', { headers });
+                        const data = await response.json();
+                        responseBox.innerHTML = JSON.stringify(data, null, 2);
+                    } catch (error) {
+                        responseBox.innerHTML = 'Error: ' + error.message;
+                    }
+                }
+                
+                function testPakistan() {
+                    testEndpoint({
+                        'User-Agent': 'Mozilla/5.0 (Android; Pakistan; Jazz 4G)',
+                        'Accept-Language': 'ur-pk,en;q=0.8'
+                    });
+                }
+                
+                function testPakistanVPN() {
+                    testEndpoint({
+                        'User-Agent': 'Mozilla/5.0 (iPhone; PK; ExpressVPN)',
+                        'Accept-Language': 'ur,en;q=0.7',
+                        'X-Forwarded-For': '185.159.100.100, 101.50.200.100',
+                        'Via': '1.1 vpn-proxy'
+                    });
+                }
+                
+                function testIndia() {
+                    testEndpoint({
+                        'User-Agent': 'Mozilla/5.0 (Android; India; Airtel 4G)',
+                        'Accept-Language': 'en-IN,hi;q=0.9',
+                        'X-Timezone-Offset': '-330'
+                    });
+                }
+                
+                async function forceNormal() {
+                    const response = await fetch('/force-normal');
+                    const data = await response.json();
+                    document.getElementById('response').innerHTML = JSON.stringify(data, null, 2);
+                }
+                
+                // Test on page load
+                testPakistan();
+            </script>
         </body>
         </html>
     `);
@@ -648,31 +887,36 @@ curl http://localhost:${PORT}/force-normal
 
 app.listen(PORT, () => {
     console.log(`
-    ================================================
-    🇵🇰 PAKISTAN & VPN FRIENDLY DETECTION SERVER
-    ================================================
+    ====================================================
+    🚀 ULTIMATE PAKISTAN DETECTION SERVER (VPN FRIENDLY)
+    ====================================================
     
     📡 Server: http://localhost:${PORT}
     🔧 Port: ${PORT}
     
-    🎯 CRITICAL LOGIC:
-       Pakistan Users (with/without VPN)  → Normal Page
-       All Other Users                    → Special Page
+    🎯 SMART LOGIC:
+       • Pakistan users (with VPN) → Normal Page ✓
+       • Pakistan users (no VPN)   → Normal Page ✓
+       • India users               → Special Page ✓
+       • Other countries           → Special Page ✓
     
-    📊 STATS:
-       • ${detector.pakIPRanges.length} IP ranges (including VPN)
-       • ${detector.commonVPNRanges.length} known VPN ranges
+    🔥 KEY FEATURES:
+       • VPN detection WITHOUT penalty for Pakistan users
+       • Advanced multi-factor analysis
+       • 400+ Pakistan IP ranges
+       • User behavior tracking
        • Default: Normal Page when uncertain
     
-    📌 TEST SCENARIOS:
-       1. Pakistan + No VPN    → Normal Page ✓
-       2. Pakistan + VPN       → Normal Page ✓
-       3. India + No VPN      → Special Page ✓
-       4. India + VPN         → Special Page ✓
-       5. USA/UK + Any        → Special Page ✓
+    📊 DETECTION FACTORS:
+       1. IP Address analysis
+       2. User-Agent patterns
+       3. Language preferences
+       4. Header analysis
+       5. Behavior patterns
+       6. VPN detection (friendly)
     
     ⚡ Quick Test:
        curl http://localhost:${PORT}/detect
-    ================================================
+    ====================================================
     `);
 });
